@@ -10,6 +10,14 @@ auth (GitHub, Cloudflare, etc.), without ever touching your existing
 hitting real edge cases while setting this up by hand; sharing it so
 others don't have to rediscover the same gotchas.
 
+![Two isolated Claude Desktop instances running side by side](docs/images/dual-desktop-screenshot.png)
+
+All content in this screenshot has been blurred to protect real project
+and account details — what it's actually showing is two independently
+authenticated Claude Desktop instances running *at the same time*
+(`build-desktop-concurrent.sh`), one in light mode and one in dark mode,
+each with its own CLI-linked session.
+
 ## Why
 
 Claude Code and Claude Desktop are built around a single logged-in
