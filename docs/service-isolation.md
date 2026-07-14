@@ -45,6 +45,41 @@ completely bypasses this problem. Keep `GH_CONFIG_DIR` too if you want
 `gh`'s *preferences* (aliases, prompts, etc.) separate as well — just
 don't rely on it for the actual credential.
 
+**Which token type**: prefer a **fine-grained token**, scoped to just the
+repos you need (Contents: read/write, Pull requests: read/write if you
+use PRs), over a classic token. Classic tokens with `repo` scope grant
+access to *every* repo the account can touch, which is more than a
+secondary-profile setup needs. Fine-grained tokens do require org-admin
+approval on organization-owned repos with restrictive settings — not an
+issue for a personal account's own repos.
+
+**Verifying the token file without ever printing the secret**: once
+you've saved it (e.g. `pbpaste | tr -d '\n' > ~/.claude-work/github-token`
+— pipe directly from clipboard, don't retype it), check its *shape*
+instead of its content:
+
+```bash
+stat -f "size: %z bytes" ~/.claude-work/github-token   # sanity-check length
+head -c 11 ~/.claude-work/github-token; echo            # expect: github_pat_
+tail -c 1 ~/.claude-work/github-token | xxd              # expect NOT 0a (no trailing newline)
+wc -l ~/.claude-work/github-token                        # expect: 0 (single line, no newline)
+```
+
+Two real mistakes worth calling out, both hit directly while building this:
+
+- **Clipboard contents can be stale.** If you copy something else (a
+  command, a message) *after* copying the token but *before* running the
+  `pbpaste` command, the file silently fills with the wrong text instead
+  of erroring — the structural checks above catch this immediately
+  (wrong prefix, wrong length), whereas trying to eyeball the actual
+  token wouldn't.
+- **Never `echo`/`cat` an env var holding a live secret to check it's
+  set.** `${GH_TOKEN:-NO}` prints the literal value if set — use
+  `${GH_TOKEN:+yes}${GH_TOKEN:-no}` (prints only `yes`/`no`) or a length
+  check instead. If a secret does end up printed to a terminal, treat it
+  as compromised and rotate it — don't assume it's fine because "it was
+  only visible to me."
+
 ## The general pattern
 
 Most of this lives in the `.envrc` for the project folder(s) where you want

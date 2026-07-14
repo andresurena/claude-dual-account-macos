@@ -62,6 +62,25 @@ Then, per the script's own output:
    Now `claude` run from inside that folder (or any subfolder) uses the
    second profile automatically — no need for the wrapper command there.
 
+## Why a separate browser per profile
+
+`BROWSER_APP` (in `install.sh` and the launcher-build scripts) isn't a
+technical requirement — Claude Code auth works fine through any browser.
+It's a strong practical recommendation anyway, for two reasons:
+
+- **Session/cookie hygiene.** If both profiles' OAuth logins (Claude,
+  GitHub, Cloudflare, whatever else) happen in the same browser, you're
+  constantly logged into one account's session while trying to act as
+  the other — the same class of problem as the Keychain-sharing bug in
+  the gotchas below, just at the browser layer instead of the CLI layer.
+- **A visual "which mode am I in" signal.** A different browser chrome
+  is an obvious, hard-to-miss cue for which identity you're currently
+  acting as — much easier to notice than checking an env var.
+
+This repo's own setup was built and tested using **Vivaldi as the
+Personal default browser and Microsoft Edge for the Work profile**. Any
+two browsers work — the point is that they're different, not which ones.
+
 ## Building the launcher apps (optional)
 
 If you'd rather double-click an app than remember a command:
@@ -83,6 +102,29 @@ a single high-res image (not a pre-made `.icns`), build one first:
 ```bash
 ./scripts/build-icns-from-image.sh my-logo.png my-icon.icns
 ```
+
+If instead you already have your icon exported at multiple individual
+sizes (e.g. from a design tool) and want to assemble a proper `.icns` by
+hand rather than using the script above, macOS expects exactly these 10
+files in an `.iconset` folder before running `iconutil -c icns`:
+
+| Filename | Pixel size |
+|---|---|
+| `icon_16x16.png` | 16×16 |
+| `icon_16x16@2x.png` | 32×32 |
+| `icon_32x32.png` | 32×32 |
+| `icon_32x32@2x.png` | 64×64 |
+| `icon_128x128.png` | 128×128 |
+| `icon_128x128@2x.png` | 256×256 |
+| `icon_256x256.png` | 256×256 |
+| `icon_256x256@2x.png` | 512×512 |
+| `icon_512x512.png` | 512×512 |
+| `icon_512x512@2x.png` | 1024×1024 |
+
+Note several filenames map to the *same* pixel size (e.g. `icon_32x32.png`
+and `icon_16x16@2x.png` are both 32×32) — that's expected, macOS just
+wants both names present, pointing at the same image. `build-icns-from-image.sh`
+handles this mapping automatically.
 
 ### Wanting both Desktop apps open at once?
 
@@ -139,7 +181,8 @@ explicitly:
   (now-stale) cached label. Found by hitting it directly — see
   [`docs/service-isolation.md`](docs/service-isolation.md) for the fix
   (a Personal Access Token via `GH_TOKEN`, which bypasses the Keychain
-  entirely).
+  entirely) — including how to save and verify that token file without
+  ever printing the secret itself.
 
 ## Safety notes
 
