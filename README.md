@@ -131,6 +131,15 @@ explicitly:
 - **Editing a direnv `.envrc` after the last `direnv allow` blocks it**
   until you run `direnv allow` again — direnv re-checksums the file on
   every change as a security measure.
+- **`gh auth login` + `GH_CONFIG_DIR` does not actually isolate GitHub CLI
+  auth on macOS.** The Keychain-stored token isn't scoped by
+  `GH_CONFIG_DIR` — logging into any `gh` config anywhere on the machine
+  silently overwrites the real credential every other "isolated" config
+  resolves to, while `gh auth status` keeps showing each config's own
+  (now-stale) cached label. Found by hitting it directly — see
+  [`docs/service-isolation.md`](docs/service-isolation.md) for the fix
+  (a Personal Access Token via `GH_TOKEN`, which bypasses the Keychain
+  entirely).
 
 ## Safety notes
 

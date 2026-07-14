@@ -142,9 +142,17 @@ cat >> "$CONFIG_DIR/envrc-template" <<'ENVRC'
 # Most CLIs that support multiple machines/accounts read their config
 # location from an env var. A few common ones:
 #
-#   GitHub CLI:  export GH_CONFIG_DIR="$CONFIG_DIR/gh-config"
-#                (also isolates `git`'s HTTPS auth if you use
-#                `gh auth git-credential` as your credential helper)
+#   GitHub CLI:  DO NOT rely on `gh auth login` + GH_CONFIG_DIR for this —
+#                on macOS, gh's Keychain-stored token is NOT scoped by
+#                GH_CONFIG_DIR, so logging into ANY gh config anywhere on
+#                the machine silently overwrites the credential every
+#                other "isolated" config resolves to (see docs/service-
+#                isolation.md for how this was discovered). Use a
+#                Personal Access Token instead:
+#                  export GH_CONFIG_DIR="$CONFIG_DIR/gh-config"
+#                  if [ -f "$CONFIG_DIR/github-token" ]; then
+#                    export GH_TOKEN="$(cat "$CONFIG_DIR/github-token")"
+#                  fi
 #   Cloudflare:  export WRANGLER_HOME="$CONFIG_DIR/wrangler-home"
 #   Anything else with just an API key (no CLI login flow): store the key
 #   in a file under $CONFIG_DIR and export it here, e.g.:
