@@ -65,7 +65,7 @@ tail -c 1 ~/.claude-work/github-token | xxd              # expect NOT 0a (no tra
 wc -l ~/.claude-work/github-token                        # expect: 0 (single line, no newline)
 ```
 
-Two real mistakes worth calling out, both hit directly while building this:
+Three real mistakes worth calling out, all hit directly while building this:
 
 - **Clipboard contents can be stale.** If you copy something else (a
   command, a message) *after* copying the token but *before* running the
@@ -76,9 +76,22 @@ Two real mistakes worth calling out, both hit directly while building this:
 - **Never `echo`/`cat` an env var holding a live secret to check it's
   set.** `${GH_TOKEN:-NO}` prints the literal value if set — use
   `${GH_TOKEN:+yes}${GH_TOKEN:-no}` (prints only `yes`/`no`) or a length
-  check instead. If a secret does end up printed to a terminal, treat it
-  as compromised and rotate it — don't assume it's fine because "it was
-  only visible to me."
+  check instead.
+- **A terminal window's scrollback is a secret-storage location too,**
+  not just the commands you type. Something as innocuous as reading back
+  a Terminal window's full contents (e.g. to check on a long-running
+  command, or via `osascript`/screen-reading automation) can resurface a
+  secret that was displayed on-screen many commands ago and never
+  scrolled out of the buffer — even if the *current* command has nothing
+  to do with secrets. Long-lived terminal sessions that have handled
+  tokens are worth closing once you're done with that task, not kept
+  open indefinitely.
+
+If a secret does end up printed anywhere — terminal output, a log, an
+assistant's response — treat it as compromised and rotate it immediately.
+Don't assume it's fine because "it was only visible to me"; the safe
+default is to always rotate, since verifying no copy persisted anywhere
+is harder than just generating a new one.
 
 ## The general pattern
 

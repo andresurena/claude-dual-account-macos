@@ -35,6 +35,7 @@ you use or which project folder you're in.
 | `scripts/build-cli-launcher.sh` | Builds a double-clickable app that opens Terminal into a project folder and launches your wrapper command |
 | `scripts/build-desktop-launcher.sh` | Builds a double-clickable app that launches Claude Desktop with an isolated profile (simple, fully supported — see caveats below) |
 | `scripts/build-desktop-concurrent.sh` | **Advanced/unsupported**: duplicates Claude Desktop so two instances can run *at the same time*. Real trade-offs — read [`docs/desktop-concurrent-instances.md`](docs/desktop-concurrent-instances.md) first |
+| `scripts/build-update-helper.sh` | Builds a "double-click to refresh" app for the above — the duplicate doesn't auto-update, so this re-runs the rebuild with your saved parameters whenever Claude Desktop updates |
 | `scripts/build-icns-from-image.sh` | Builds a proper multi-resolution `.icns` from a single source image, for custom app icons |
 | `scripts/pin-deep-link.sh` | Pins the `claude://` URL scheme to a specific app, once you have more than one Claude-branded `.app` installed |
 | `docs/service-isolation.md` | Extending the same pattern to `gh`, `wrangler`, git commit identity, and plain API-key services |
@@ -143,6 +144,43 @@ open simultaneously, see
 [`docs/desktop-concurrent-instances.md`](docs/desktop-concurrent-instances.md)
 for `build-desktop-concurrent.sh` and its trade-offs (ad-hoc code signing,
 lost entitlements, manual updates) before using it.
+
+### How this compares to Parall
+
+[Parall](https://parall.app/) ([App Store](https://apps.apple.com/us/app/parall/id6754065114?mt=12), paid) is a
+general-purpose "multi-instance app launcher" for macOS — it does, for
+almost any app, roughly what `build-desktop-concurrent.sh` does
+specifically for Claude Desktop. Worth knowing about, since it may suit
+some readers better than building this by hand:
+
+- **No duplication.** Per [its own technical docs](https://github.com/JulyIghor/Parall),
+  Parall's shortcuts "point to the original app bundle" and launch it in
+  place — no 700MB+ copy, and no need to re-run anything after an update,
+  since the shortcut always launches whatever's currently installed.
+  `build-desktop-concurrent.sh` copies the whole bundle, which is why
+  this repo needs `build-update-helper.sh` to handle refreshing it.
+- **Same fundamental signing trade-off, different mechanism.** Parall's
+  own documentation describes its shortcut bundles as "unsigned and not
+  sandboxed by design." So it isn't a way around the entitlement
+  compromise this repo hits with `build-desktop-concurrent.sh` — it's a
+  different route to a similar place, not a solution that avoids the
+  problem entirely.
+- **General-purpose vs. purpose-built.** Parall works with a wide range
+  of apps via a GUI, no scripting needed. This repo's scripts are free,
+  open, and specific to Claude Desktop's exact Electron quirks (the
+  Helper-app-renaming requirement, the `Assets.car` icon override) —
+  useful if you want to understand and control every step, or don't want
+  another paid dependency.
+- **Scope.** Parall solves the "two Desktop app windows at once" problem
+  specifically. It doesn't touch the Claude Code CLI side of this repo
+  (isolated `CLAUDE_CONFIG_DIR`, direnv per-project switching, or
+  isolating GitHub/Cloudflare/etc. auth per profile) — those are a
+  separate concern either way.
+
+If you just want two Claude Desktop windows open without caring about
+the mechanics, Parall is probably the lower-effort path. This repo exists
+for the rest of the setup, and for anyone who'd rather understand (and
+not pay for) the Desktop-instances piece specifically.
 
 ## Isolating other CLI tools (GitHub, Cloudflare, etc.)
 

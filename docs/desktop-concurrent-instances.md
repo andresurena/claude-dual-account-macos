@@ -57,7 +57,15 @@ identity**, not just its own data.
   chat and coding use is unaffected.
 - **It won't auto-update.** The duplicate is a point-in-time copy.
   Re-run the script after every Claude Desktop update to refresh it —
-  otherwise you're running a stale version indefinitely.
+  otherwise you're running a stale version indefinitely. `ditto`
+  preserves the original files' modification times when it copies them,
+  so don't rely on the duplicate's file timestamps to tell whether a
+  refresh actually happened — check `CFBundleShortVersionString` in its
+  `Info.plist` instead, or just compare against `/Applications/Claude.app`'s
+  version.
+  To make this a one-click habit instead of a remembered command, see
+  `build-update-helper.sh` below — it builds a small app that re-runs
+  this whole script with your saved parameters.
 - **It's a full copy on disk.** Expect 700MB+ per duplicate.
 - **Gatekeeper won't fully trust it.** `codesign -v` passes (the
   signature is internally consistent), but `spctl -a` will report it as
@@ -78,6 +86,26 @@ identity**, not just its own data.
 
 Both browser-app and icon arguments are optional — pass empty strings to
 skip either.
+
+## Keeping it updated with one click
+
+Since the duplicate needs re-running after every Claude Desktop update,
+`build-update-helper.sh` builds a small "Update <App Name>.app" that does
+that for you — double-click it, it opens Terminal, re-runs
+`build-desktop-concurrent.sh` with the same parameters, and tells you
+when it's done:
+
+```
+./scripts/build-update-helper.sh "My Second Claude" \
+    ~/.claude-second/core \
+    ~/.claude-second/desktop-profile \
+    "Microsoft Edge" \
+    ~/my-icon.icns
+```
+
+Use the exact same arguments you used for `build-desktop-concurrent.sh`
+originally. Quit the running duplicate before using the updater — the
+rebuild will fail (or corrupt files) if the old copy still has files open.
 
 ## If you just want isolated data, not true concurrency
 
