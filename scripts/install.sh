@@ -153,7 +153,13 @@ cat >> "$CONFIG_DIR/envrc-template" <<'ENVRC'
 #                  if [ -f "$CONFIG_DIR/github-token" ]; then
 #                    export GH_TOKEN="$(cat "$CONFIG_DIR/github-token")"
 #                  fi
-#   Cloudflare:  export WRANGLER_HOME="$CONFIG_DIR/wrangler-home"
+#   Cloudflare:  DO NOT rely on WRANGLER_HOME — it is not a real
+#                wrangler config variable at all (confirmed against
+#                wrangler --help and Cloudflare's own docs; it silently
+#                does nothing). Use an API Token instead:
+#                  if [ -f "$CONFIG_DIR/cloudflare-token" ]; then
+#                    export CLOUDFLARE_API_TOKEN="$(cat "$CONFIG_DIR/cloudflare-token")"
+#                  fi
 #   Anything else with just an API key (no CLI login flow): store the key
 #   in a file under $CONFIG_DIR and export it here, e.g.:
 #     if [ -f "$CONFIG_DIR/some-service-token" ]; then

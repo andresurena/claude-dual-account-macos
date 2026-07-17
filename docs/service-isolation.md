@@ -8,7 +8,7 @@ mechanism differs per tool:
 | Tool | Mechanism | Notes |
 |---|---|---|
 | GitHub CLI (`gh`) | `GH_TOKEN` env var (a Personal Access Token), not `gh auth login` | See warning below — `gh auth login`'s Keychain storage on macOS is **not** actually scoped by `GH_CONFIG_DIR` |
-| Cloudflare `wrangler` | `WRANGLER_HOME` env var | Isolates wrangler's own OAuth/API token storage |
+| Cloudflare `wrangler` | `CLOUDFLARE_API_TOKEN` env var (an API Token), not `wrangler login` | See warning below — `WRANGLER_HOME` is **not a real wrangler variable at all** |
 | git commit identity | native `includeIf "gitdir:...”` in `~/.gitconfig` | Directory-scoped, works from any tool (terminal, editor, GUI client) — not just direnv-aware shells |
 | SSH-based git auth | `GIT_SSH_COMMAND` env var pointing at a specific key | Only needed if you use SSH remotes; skip if you use the `GH_TOKEN` approach above |
 | Anything with a plain API key (no CLI login flow) | store the key in a file under your profile's config dir, `export` it from a file check | See pattern below |
@@ -93,6 +93,47 @@ Don't assume it's fine because "it was only visible to me"; the safe
 default is to always rotate, since verifying no copy persisted anywhere
 is harder than just generating a new one.
 
+## Warning: `WRANGLER_HOME` is not a real wrangler variable
+
+Earlier versions of this guide recommended `export
+WRANGLER_HOME="$HOME/.claude-work/wrangler-home"` to isolate wrangler's
+OAuth login the same way `GH_CONFIG_DIR` isolates `gh`'s. **This was
+wrong — `WRANGLER_HOME` doesn't exist.** It never appeared in `wrangler
+--help`, `wrangler login --help`, or Cloudflare's own [environment
+variables documentation](https://developers.cloudflare.com/workers/wrangler/system-environment-variables/).
+Setting it did nothing at all, silently — no error, no warning, wrangler
+simply ignored it and kept using its one shared, default-location login
+for every profile on the machine.
+
+This surfaced days later as a runtime error: a Worker's KV write failed
+with a 401 (`Save failed (401). Check the KV binding / network.`)
+because `wrangler dev` had been authenticating as the wrong (default,
+Personal) Cloudflare account the entire time — not because of a
+misconfigured binding, which is what the error message pointed at.
+
+**The fix**: same pattern as `GH_TOKEN`. Generate a Cloudflare API Token
+(Cloudflare dashboard → profile icon → **API Tokens** → **Create Token**
+→ **Create Custom Token**), scoped to exactly the permissions the
+project needs (e.g. **Workers KV Storage: Edit**, **Workers Scripts:
+Edit**) and restricted to the **specific account** you want, not "All
+accounts" — restricting to one account is what actually prevents the
+ambiguity that caused the 401 here. Export it as `CLOUDFLARE_API_TOKEN`;
+wrangler reads it directly and it takes precedence over any OAuth login
+state, bypassing the whole problem.
+
+Verify which account is actually active with `wrangler whoami` — same
+principle as `gh api user --jq '.login'` above: check the tool's live,
+real answer, not an assumption about which env var should have worked.
+
+**The broader lesson, not just about wrangler**: an env var that "should"
+isolate a tool, based on the naming convention other tools use, is a
+hypothesis until it's checked against that tool's own documentation or
+`--help` output. Two different CLIs on this same project (`gh` and
+`wrangler`) each turned out to need a *different* real mechanism than
+what was first assumed — there's no way to guess this reliably. When in
+doubt: verify with `--help`, official docs, or the vendor's environment-
+variable reference, not by pattern-matching against a similar tool.
+
 ## The general pattern
 
 Most of this lives in the `.envrc` for the project folder(s) where you want
@@ -107,8 +148,11 @@ if [ -f "$HOME/.claude-work/github-token" ]; then
   export GH_TOKEN="$(cat "$HOME/.claude-work/github-token")"
 fi
 
-# Cloudflare
-export WRANGLER_HOME="$HOME/.claude-work/wrangler-home"
+# Cloudflare — WRANGLER_HOME is NOT enough, see warning above.
+# Generate an API Token for the second account and drop it here.
+if [ -f "$HOME/.claude-work/cloudflare-token" ]; then
+  export CLOUDFLARE_API_TOKEN="$(cat "$HOME/.claude-work/cloudflare-token")"
+fi
 
 # Any API-key-only service — drop the key in a file once, never hardcode it
 if [ -f "$HOME/.claude-work/some-service-token" ]; then
@@ -116,14 +160,14 @@ if [ -f "$HOME/.claude-work/some-service-token" ]; then
 fi
 ```
 
-Then, once per tool, authenticate **from inside that project folder** so the
-env var is active when the login flow runs:
+Then, from inside that project folder, verify each token actually
+resolves to the right account **before doing anything else** — don't
+trust that setting the env var alone was sufficient:
 
 ```bash
 cd /path/to/work-project
-gh api user --jq '.login'   # verify the PAT above resolves to the right account
-wrangler login               # isolated to WRANGLER_HOME
-wrangler whoami               # sanity-check it's the right account before doing anything else
+gh api user --jq '.login'   # verify the GH_TOKEN above resolves to the right account
+wrangler whoami               # verify the CLOUDFLARE_API_TOKEN above resolves to the right account
 ```
 
 ## git commit identity

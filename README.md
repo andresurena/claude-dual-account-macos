@@ -274,6 +274,19 @@ works fine as a periodic job (cron/launchd) if you want it automatic.
   (a Personal Access Token via `GH_TOKEN`, which bypasses the Keychain
   entirely) — including how to save and verify that token file without
   ever printing the secret itself.
+- **`WRANGLER_HOME` is not a real wrangler config variable at all.** An
+  earlier version of this repo recommended it to isolate Cloudflare
+  `wrangler` auth. It doesn't appear in `wrangler --help`, `wrangler
+  login --help`, or Cloudflare's own environment-variable docs — setting
+  it silently did nothing, and `wrangler dev` kept using the shared,
+  default (Personal) Cloudflare login the whole time. This surfaced days
+  later as a KV binding write failing with a 401 — a runtime error that
+  looked like a config/binding bug but was actually a wrong-account auth
+  bug. See [`docs/service-isolation.md`](docs/service-isolation.md) for
+  the fix (`CLOUDFLARE_API_TOKEN`, an API Token scoped to one specific
+  account) and the broader lesson: an env var that "should" work by
+  naming convention is a hypothesis, not a fact, until checked against
+  the tool's own docs.
 
 ## Safety notes
 
