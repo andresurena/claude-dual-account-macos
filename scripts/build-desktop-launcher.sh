@@ -13,19 +13,33 @@
 # docs/desktop-concurrent-instances.md for the (unsupported, more
 # involved) alternative.
 #
+# IMPORTANT: --user-data-dir only isolates the Electron web-session layer
+# (cookies, localStorage, the chat UI's own login). It does NOT isolate
+# the embedded Claude Code / agentic backend that Desktop's "Code"
+# feature and any in-app /login use — that backend reads CLAUDE_CONFIG_DIR
+# from the environment same as the CLI does, and silently falls back to
+# your DEFAULT profile (usually Personal, ~/.claude) if it's unset. This
+# was hit directly: a profile built without exporting CLAUDE_CONFIG_DIR
+# looked correctly isolated for weeks — until a /login inside it quietly
+# authenticated (and overwrote local state) as the OTHER profile. This
+# script now requires you to pass it explicitly so that mistake can't
+# happen silently again.
+#
 # Usage:
-#   ./build-desktop-launcher.sh "App Name" /path/to/profile-data-dir [browser-app-name] [icon.icns]
+#   ./build-desktop-launcher.sh "App Name" /path/to/profile-data-dir /path/to/claude-config-dir [browser-app-name] [icon.icns]
 #
 # Example:
 #   ./build-desktop-launcher.sh "Claude Work Desktop" \
-#       "$HOME/.claude-work/desktop-profile" "Microsoft Edge" "$HOME/my-icon.icns"
+#       "$HOME/.claude-work/desktop-profile" "$HOME/.claude-work" \
+#       "Microsoft Edge" "$HOME/my-icon.icns"
 
 set -euo pipefail
 
 APP_NAME="${1:?App display name required, e.g. \"Claude Work Desktop\"}"
 PROFILE_DIR="${2:?Profile data directory required, e.g. ~/.claude-work/desktop-profile}"
-BROWSER_APP="${3:-}"
-ICON_PATH="${4:-}"
+CLAUDE_CONFIG_DIR_VALUE="${3:?CLAUDE_CONFIG_DIR value required, e.g. ~/.claude-work — isolates the embedded Code backend, not just the Electron profile. See the IMPORTANT note above.}"
+BROWSER_APP="${4:-}"
+ICON_PATH="${5:-}"
 
 CLAUDE_APP="/Applications/Claude.app"
 if [ ! -d "$CLAUDE_APP" ]; then
@@ -45,7 +59,7 @@ mkdir -p "$PROFILE_DIR"
 # Build the actual shell command as plain text first — real quotes, and
 # $PATH deliberately escaped (\$PATH) so it's evaluated when the launcher
 # runs later, not expanded right now while building this script.
-SHELL_CMD=""
+SHELL_CMD="export CLAUDE_CONFIG_DIR=\"${CLAUDE_CONFIG_DIR_VALUE}\"; "
 if [ -n "$BROWSER_APP" ]; then
   mkdir -p "$BIN_DIR"
   cat > "$BIN_DIR/open" <<SHIM
@@ -53,7 +67,7 @@ if [ -n "$BROWSER_APP" ]; then
 exec /usr/bin/open -a "$BROWSER_APP" "\$@"
 SHIM
   chmod +x "$BIN_DIR/open"
-  SHELL_CMD="export PATH=\"${BIN_DIR}:\$PATH\"; "
+  SHELL_CMD="${SHELL_CMD}export PATH=\"${BIN_DIR}:\$PATH\"; "
 fi
 SHELL_CMD="${SHELL_CMD}nohup \"${CLAUDE_APP}/Contents/MacOS/Claude\" --user-data-dir=\"${PROFILE_DIR}\" > /dev/null 2>&1 &"
 

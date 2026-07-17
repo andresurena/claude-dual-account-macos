@@ -38,6 +38,7 @@ you use or which project folder you're in.
 | `scripts/build-update-helper.sh` | Builds a "double-click to refresh" app for the above — the duplicate doesn't auto-update, so this re-runs the rebuild with your saved parameters whenever Claude Desktop updates |
 | `scripts/build-icns-from-image.sh` | Builds a proper multi-resolution `.icns` from a single source image, for custom app icons |
 | `scripts/pin-deep-link.sh` | Pins the `claude://` URL scheme to a specific app, once you have more than one Claude-branded `.app` installed |
+| `scripts/backup-claude-sessions.sh` | Backs up Claude Code session transcripts (`projects/`) from one or more profiles into timestamped archives — deliberately excludes credentials/tokens that live alongside them |
 | `docs/service-isolation.md` | Extending the same pattern to `gh`, `wrangler`, git commit identity, and plain API-key services |
 
 ## Quick start
@@ -102,8 +103,13 @@ If you'd rather double-click an app than remember a command:
 # Desktop launcher — isolated profile, same Claude.app identity
 # (can't run at the same time as your main Claude Desktop — see below)
 ./scripts/build-desktop-launcher.sh "Claude Work Desktop" \
-    "$HOME/.claude-work/desktop-profile" "Microsoft Edge" "$HOME/my-icon.icns"
+    "$HOME/.claude-work/desktop-profile" "$HOME/.claude-work" \
+    "Microsoft Edge" "$HOME/my-icon.icns"
 ```
+
+The third argument (a `CLAUDE_CONFIG_DIR` value, e.g. `~/.claude-work`) is
+required, not optional — see the gotcha below on why skipping it silently
+breaks isolation instead of just failing outright.
 
 Both take an optional `.icns` path as the last argument. If you only have
 a single high-res image (not a pre-made `.icns`), build one first:
@@ -199,8 +205,47 @@ explicitly:
 ./scripts/pin-deep-link.sh /Applications/Claude.app
 ```
 
+## Backing up session transcripts
+
+Claude Code session transcripts (the conversation history behind
+resuming a session) live under `<config-dir>/projects/`. They're not
+covered by any of the isolation above, and they're worth backing up in
+their own right — losing a config directory (accidentally, or via a
+migration gone wrong) means losing that history for good. Back up one or
+more profiles into timestamped archives:
+
+```bash
+./scripts/backup-claude-sessions.sh ~/Claude-Session-Backups ~/.claude ~/.claude-work
+```
+
+The script only archives `projects/`, not the rest of the config
+directory — the config dir root also holds credentials and tokens (OAuth
+state, any service-isolation files per
+[`docs/service-isolation.md`](docs/service-isolation.md)) that have no
+reason to be duplicated into a backup location. Safe to run repeatedly —
+each run creates a new archive rather than overwriting the last, so it
+works fine as a periodic job (cron/launchd) if you want it automatic.
+
 ## Known gotchas (already handled by these scripts, documented here so you understand *why*)
 
+- **`--user-data-dir` only isolates Claude Desktop's Electron web-session
+  layer — cookies, localStorage, the chat UI's own login. It does NOT
+  isolate the embedded Claude Code / agentic backend** that Desktop's
+  "Code" feature and any in-app `/login` actually use. That backend reads
+  `CLAUDE_CONFIG_DIR` from the environment exactly like the CLI does, and
+  silently falls back to your *default* profile (usually Personal,
+  `~/.claude`) if it's unset — with no error, no warning. This is the
+  single most consequential bug hit while building this repo: a
+  duplicate built without exporting `CLAUDE_CONFIG_DIR` looked correctly
+  isolated for weeks (separate chat login, separate cookies, separate
+  icon) — right up until an in-app `/login` quietly authenticated (and
+  wrote local state) as the *other* profile. `build-desktop-launcher.sh`
+  and `build-desktop-concurrent.sh` both now require a `CLAUDE_CONFIG_DIR`
+  value as an explicit argument specifically so this can't silently
+  regress again. **If you're on an older version of these scripts, or
+  built your own launcher without this, check now**: open the profile in
+  question and run `/status` or `/login` — if it shows the wrong
+  account, this is why.
 - **A shell-script `.app` executable can trigger a false "Intel app /
   requires Rosetta" notification on Apple Silicon.** macOS's
   LaunchServices identifies an app's architecture from its

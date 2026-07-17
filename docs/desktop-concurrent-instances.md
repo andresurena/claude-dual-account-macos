@@ -7,12 +7,14 @@
 ## Why the simple approach isn't enough
 
 `scripts/build-desktop-launcher.sh` gives Claude Desktop an isolated
-profile via Electron's `--user-data-dir` flag — separate cookies,
-separate login, separate everything data-wise. But it still launches the
-*same* `/Applications/Claude.app` bundle, and macOS only allows one
-running instance per app identity (bundle ID) at a time. Launch a second
-one and macOS just re-activates the first — you don't get a second
-window.
+profile via Electron's `--user-data-dir` flag — separate cookies and
+separate chat-UI login (plus, since both scripts now also export
+`CLAUDE_CONFIG_DIR`, a separate Claude Code backend too — see the
+gotcha in the main README if you're not familiar with why that second
+env var matters). But it still launches the *same*
+`/Applications/Claude.app` bundle, and macOS only allows one running
+instance per app identity (bundle ID) at a time. Launch a second one and
+macOS just re-activates the first — you don't get a second window.
 
 To get true concurrency, the duplicate needs its **own bundle
 identity**, not just its own data.
@@ -80,12 +82,15 @@ identity**, not just its own data.
 ./scripts/build-desktop-concurrent.sh "My Second Claude" \
     ~/.claude-second/core \
     ~/.claude-second/desktop-profile \
+    ~/.claude-second \
     "Microsoft Edge" \
     ~/my-icon.icns
 ```
 
-Both browser-app and icon arguments are optional — pass empty strings to
-skip either.
+The fourth argument (`CLAUDE_CONFIG_DIR`, e.g. `~/.claude-second`) is
+required — it's what isolates the embedded Code backend, not just the
+Electron profile; see the gotcha in the main README. Browser-app and icon
+are optional — pass empty strings to skip either.
 
 ## Keeping it updated with one click
 
@@ -99,6 +104,7 @@ when it's done:
 ./scripts/build-update-helper.sh "My Second Claude" \
     ~/.claude-second/core \
     ~/.claude-second/desktop-profile \
+    ~/.claude-second \
     "Microsoft Edge" \
     ~/my-icon.icns
 ```

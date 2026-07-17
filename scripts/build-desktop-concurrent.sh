@@ -24,21 +24,34 @@
 #     update to refresh the duplicate.
 #   - It's a ~700MB+ copy on disk.
 #
+# IMPORTANT: --user-data-dir only isolates the Electron web-session layer
+# (cookies, localStorage, the chat UI's own login). It does NOT isolate
+# the embedded Claude Code / agentic backend that Desktop's "Code"
+# feature and any in-app /login use — that backend reads CLAUDE_CONFIG_DIR
+# from the environment same as the CLI does, and silently falls back to
+# your DEFAULT profile (usually Personal, ~/.claude) if it's unset. This
+# was hit directly: a duplicate built without exporting CLAUDE_CONFIG_DIR
+# looked correctly isolated for weeks — until a /login inside it quietly
+# authenticated (and overwrote local state) as the OTHER profile. This
+# script now requires you to pass it explicitly so that mistake can't
+# happen silently again.
+#
 # Usage:
-#   ./build-desktop-concurrent.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir [browser-app-name] [icon.icns]
+#   ./build-desktop-concurrent.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir /path/to/claude-config-dir [browser-app-name] [icon.icns]
 #
 # Example:
 #   ./build-desktop-concurrent.sh "Claude Work Desktop" \
 #       "$HOME/.claude-work/core" "$HOME/.claude-work/desktop-profile" \
-#       "Microsoft Edge" "$HOME/my-icon.icns"
+#       "$HOME/.claude-work" "Microsoft Edge" "$HOME/my-icon.icns"
 
 set -euo pipefail
 
 APP_NAME="${1:?App display name required, e.g. \"Claude Work Desktop\"}"
 CORE_INSTALL_DIR="${2:?Directory to hold the duplicated core app required, e.g. ~/.claude-work/core}"
 PROFILE_DIR="${3:?Profile data directory required, e.g. ~/.claude-work/desktop-profile}"
-BROWSER_APP="${4:-}"
-ICON_PATH="${5:-}"
+CLAUDE_CONFIG_DIR_VALUE="${4:?CLAUDE_CONFIG_DIR value required, e.g. ~/.claude-work — isolates the embedded Code backend, not just the Electron profile. See the IMPORTANT note above.}"
+BROWSER_APP="${5:-}"
+ICON_PATH="${6:-}"
 
 SOURCE_APP="/Applications/Claude.app"
 if [ ! -d "$SOURCE_APP" ]; then
@@ -120,7 +133,7 @@ echo "== Building launcher app =="
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-SHELL_CMD=""
+SHELL_CMD="export CLAUDE_CONFIG_DIR=\"${CLAUDE_CONFIG_DIR_VALUE}\"; "
 if [ -n "$BROWSER_APP" ]; then
   mkdir -p "$BIN_DIR"
   cat > "$BIN_DIR/open" <<SHIM
@@ -128,7 +141,7 @@ if [ -n "$BROWSER_APP" ]; then
 exec /usr/bin/open -a "$BROWSER_APP" "\$@"
 SHIM
   chmod +x "$BIN_DIR/open"
-  SHELL_CMD="export PATH=\"${BIN_DIR}:\$PATH\"; "
+  SHELL_CMD="${SHELL_CMD}export PATH=\"${BIN_DIR}:\$PATH\"; "
 fi
 SHELL_CMD="${SHELL_CMD}nohup \"${CORE_APP}/Contents/MacOS/${MAIN_EXECUTABLE}\" --user-data-dir=\"${PROFILE_DIR}\" > /dev/null 2>&1 &"
 AS_ESCAPED="${SHELL_CMD//\"/\\\"}"
