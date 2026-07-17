@@ -134,6 +134,61 @@ what was first assumed — there's no way to guess this reliably. When in
 doubt: verify with `--help`, official docs, or the vendor's environment-
 variable reference, not by pattern-matching against a similar tool.
 
+## Pinning `account_id` when one login spans multiple Cloudflare accounts
+
+A single Cloudflare login (or a broadly-scoped API Token) can have
+visibility into *several* accounts at once — your own personal account,
+a client's, an employer's — even without any of the isolation problems
+above. `wrangler` picks one by default when a project's config doesn't
+say otherwise, and that default isn't necessarily the one you meant.
+This is a distinct risk from profile isolation: it can bite you even
+within a single, correctly-isolated profile, any time that profile's
+token can see more than one account.
+
+**The fix**: pin `account_id` directly in the project's `wrangler.jsonc`
+/ `wrangler.toml` — Cloudflare's own recommended practice for exactly
+this situation. `account_id` is not a secret; it's safe to commit
+alongside the rest of the config.
+
+```jsonc
+{
+  "name": "my-worker",
+  "account_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  ...
+}
+```
+```toml
+name = "my-worker"
+account_id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+**Verifying which account a project actually belongs to, without
+guessing**: if the project already has a bound KV namespace or D1
+database, cross-reference that resource's ID against each candidate
+account — a resource can only exist in the account that created it, so
+a match is real proof, not an assumption:
+
+```bash
+# List resources under a specific account (there's no --account-id flag
+# on these commands — CLOUDFLARE_ACCOUNT_ID is the actual mechanism):
+CLOUDFLARE_ACCOUNT_ID="<account-id>" npx wrangler kv namespace list
+CLOUDFLARE_ACCOUNT_ID="<account-id>" npx wrangler d1 list
+```
+
+Run that for each account your login can see, then match the `id` /
+`database_id` already in the project's config against whichever
+account's list contains it.
+
+**Known limitation — don't rely on `wrangler pages project list` for
+this.** Unlike `kv namespace list` and `d1 list`, it does **not** respect
+`CLOUDFLARE_ACCOUNT_ID` — it returns the identical project list
+regardless of which account ID is passed. If a project has no bound
+KV/D1 resource (a plain static Pages site, or one using only Durable
+Objects/R2 with no globally-unique ID to check), there's no reliable way
+to verify its account programmatically. Don't guess in that case — ask
+whoever owns the project, since a wrong `account_id` risks deploying to
+the wrong account entirely, not just failing loudly.
+
 ## The general pattern
 
 Most of this lives in the `.envrc` for the project folder(s) where you want

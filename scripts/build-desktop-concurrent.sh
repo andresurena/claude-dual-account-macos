@@ -36,6 +36,16 @@
 # script now requires you to pass it explicitly so that mistake can't
 # happen silently again.
 #
+# ALSO IMPORTANT: the duplicate still declares itself a handler for the
+# claude:// URL scheme (and the MSAL auth scheme), copied verbatim from
+# the original Info.plist — renaming CFBundleName/Identifier does NOT
+# remove this. Left alone, this means two apps compete to open claude://
+# deep links, and macOS's choice between them isn't guaranteed to be the
+# one you actually want. This script strips CFBundleURLTypes from the
+# duplicate entirely so only the real /Applications/Claude.app can ever
+# claim that scheme — if you need the duplicate itself to handle deep
+# links (uncommon), you'll need to re-add and re-pin that manually.
+#
 # Usage:
 #   ./build-desktop-concurrent.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir /path/to/claude-config-dir [browser-app-name] [icon.icns]
 #
@@ -105,6 +115,9 @@ echo "== Rebranding main Info.plist =="
 /usr/libexec/PlistBuddy -c "Set :CFBundleName ${APP_NAME}" "$CORE_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${APP_NAME}" "$CORE_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${CORE_BUNDLE_ID}" "$CORE_APP/Contents/Info.plist"
+
+echo "== Removing claimed URL schemes (claude://, MSAL) so the duplicate can't compete with the real Claude.app for deep links =="
+/usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$CORE_APP/Contents/Info.plist" 2>/dev/null || true
 
 if [ -n "$ICON_PATH" ]; then
   echo "== Replacing icon =="

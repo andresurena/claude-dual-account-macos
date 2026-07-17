@@ -193,7 +193,11 @@ not pay for) the Desktop-instances piece specifically.
 `CLAUDE_CONFIG_DIR` only isolates Claude's own auth. Extending the same
 idea to `gh`, `wrangler`, git commit identity, or any API-key-based
 service is covered in
-[`docs/service-isolation.md`](docs/service-isolation.md).
+[`docs/service-isolation.md`](docs/service-isolation.md) — including a
+separate, related risk worth knowing about even without any of this:
+a single Cloudflare login can see multiple accounts at once, and
+`wrangler` will silently pick one unless you pin `account_id` per
+project.
 
 ## Deep link pinning
 
@@ -287,6 +291,18 @@ works fine as a periodic job (cron/launchd) if you want it automatic.
   account) and the broader lesson: an env var that "should" work by
   naming convention is a hypothesis, not a fact, until checked against
   the tool's own docs.
+- **A duplicated Claude.app still claims the `claude://` deep-link
+  scheme, verbatim from the original.** Renaming `CFBundleName` and
+  `CFBundleIdentifier` doesn't remove `CFBundleURLTypes` — the duplicate
+  keeps declaring itself a handler for both `claude://` and the MSAL auth
+  scheme, so two apps end up competing for the same deep link, and which
+  one macOS actually picks isn't guaranteed. Found while chasing a report
+  that `claude://` links from a browser weren't opening anything.
+  `build-desktop-concurrent.sh` now strips `CFBundleURLTypes` from every
+  duplicate it builds — only `/Applications/Claude.app` itself can claim
+  the scheme. If you already have an older duplicate built before this
+  fix, re-run the script (or `scripts/pin-deep-link.sh` after manually
+  deleting `CFBundleURLTypes` from its `Info.plist`) to pick it up.
 
 ## Safety notes
 
