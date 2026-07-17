@@ -1,22 +1,34 @@
 #!/bin/zsh
 #
-# Builds a double-clickable "Update <App Name>.app" that re-runs
+# Builds a double-clickable updater app that re-runs
 # build-desktop-concurrent.sh with the same parameters you originally
 # used — for whenever Claude Desktop updates and your concurrent
 # duplicate (see docs/desktop-concurrent-instances.md) needs refreshing
-# to match.
+# to match. Optionally backs up Claude Code session transcripts first,
+# via backup-claude-sessions.sh, so an update is never the first time
+# you'd notice a backup was overdue.
 #
 # Usage:
-#   ./build-update-helper.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir /path/to/claude-config-dir [browser-app-name] [icon.icns]
+#   ./build-update-helper.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir /path/to/claude-config-dir \
+#       [browser-app-name] [icon.icns] [updater-app-display-name] \
+#       [backup-dest-dir] [config-dir-to-backup...]
 #
-# Example (matching the earlier build-desktop-concurrent.sh example):
+# Pass "" for any optional argument you want to skip but a later one you
+# do want to set (browser-app-name, icon.icns, updater-app-display-name).
+#
+# Example — matching the earlier build-desktop-concurrent.sh example,
+# with a custom updater name and a backup of two profiles before every update:
 #   ./build-update-helper.sh "Claude Work Desktop" \
 #       "$HOME/.claude-work/core" "$HOME/.claude-work/desktop-profile" \
-#       "$HOME/.claude-work" "Microsoft Edge" "$HOME/my-icon.icns"
+#       "$HOME/.claude-work" "Microsoft Edge" "$HOME/my-icon.icns" \
+#       "Claude Work Updater" \
+#       "$HOME/Claude-Session-Backups" "$HOME/.claude" "$HOME/.claude-work"
 #
-# This creates "Update Claude Work Desktop.app" in /Applications. Double
-# click it any time Claude Desktop updates; it opens Terminal, re-runs
-# the duplication with the same parameters, and tells you when it's done.
+# Without the last two lines (backup args), this creates "Update Claude
+# Work Desktop.app" with no backup step — same as before. Double-click it
+# any time Claude Desktop updates; it opens Terminal, re-runs the
+# duplication (and the backup, if configured) with the same parameters,
+# and tells you when it's done.
 #
 # Quit the running duplicate before using it — the rebuild will fail (or
 # corrupt files) if the old copy still has files open.
@@ -29,6 +41,12 @@ PROFILE_DIR="${3:?Profile data directory required, e.g. ~/.claude-work/desktop-p
 CLAUDE_CONFIG_DIR_VALUE="${4:?CLAUDE_CONFIG_DIR value required, e.g. ~/.claude-work}"
 BROWSER_APP="${5:-}"
 ICON_PATH="${6:-}"
+UPDATER_APP_NAME="${7:-}"
+BACKUP_DEST_DIR="${8:-}"
+
+if [ -z "$UPDATER_APP_NAME" ]; then
+  UPDATER_APP_NAME="Update ${APP_NAME}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONCURRENT_SCRIPT="$SCRIPT_DIR/build-desktop-concurrent.sh"
@@ -37,7 +55,21 @@ if [ ! -f "$CONCURRENT_SCRIPT" ]; then
   exit 1
 fi
 
-UPDATER_APP_NAME="Update ${APP_NAME}"
+BACKUP_ARGS=()
+if [ -n "$BACKUP_DEST_DIR" ]; then
+  BACKUP_SCRIPT="$SCRIPT_DIR/backup-claude-sessions.sh"
+  if [ ! -f "$BACKUP_SCRIPT" ]; then
+    echo "backup-claude-sessions.sh not found next to this script at $BACKUP_SCRIPT"
+    exit 1
+  fi
+  shift 8
+  if [ "$#" -eq 0 ]; then
+    echo "BACKUP_DEST_DIR given but no config directories to back up were passed"
+    exit 1
+  fi
+  BACKUP_ARGS=("$@")
+fi
+
 APP_PATH="/Applications/${UPDATER_APP_NAME}.app"
 BUNDLE_ID="com.$(whoami | tr -dc 'a-z0-9').update-$(echo "$APP_NAME" | tr '[:upper:] ' '[:lower:]-')"
 
@@ -48,7 +80,15 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # it in one pass at the end — see build-desktop-launcher.sh for why doing
 # this in two separate steps matters (mixing escaping contexts is a real,
 # previously-hit bug).
-SHELL_CMD="\"${CONCURRENT_SCRIPT}\" \"${APP_NAME}\" \"${CORE_INSTALL_DIR}\" \"${PROFILE_DIR}\" \"${CLAUDE_CONFIG_DIR_VALUE}\" \"${BROWSER_APP}\" \"${ICON_PATH}\"; echo; echo 'Done — you can close this window.'"
+SHELL_CMD=""
+if [ -n "$BACKUP_DEST_DIR" ]; then
+  SHELL_CMD="\"${BACKUP_SCRIPT}\" \"${BACKUP_DEST_DIR}\""
+  for d in "${BACKUP_ARGS[@]}"; do
+    SHELL_CMD="${SHELL_CMD} \"${d}\""
+  done
+  SHELL_CMD="${SHELL_CMD}; echo; "
+fi
+SHELL_CMD="${SHELL_CMD}\"${CONCURRENT_SCRIPT}\" \"${APP_NAME}\" \"${CORE_INSTALL_DIR}\" \"${PROFILE_DIR}\" \"${CLAUDE_CONFIG_DIR_VALUE}\" \"${BROWSER_APP}\" \"${ICON_PATH}\"; echo; echo 'Done — you can close this window.'"
 AS_ESCAPED="${SHELL_CMD//\"/\\\"}"
 
 cat > "$WORKDIR/updater.applescript" <<EOF

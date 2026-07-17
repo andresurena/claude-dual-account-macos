@@ -109,6 +109,23 @@ when it's done:
     ~/my-icon.icns
 ```
 
+By default the generated app is named "Update My Second Claude" — pass a
+seventh argument to override that. You can also have it back up session
+transcripts (via `backup-claude-sessions.sh`) immediately before every
+rebuild, by adding a backup destination and one or more config
+directories after that:
+
+```
+./scripts/build-update-helper.sh "My Second Claude" \
+    ~/.claude-second/core \
+    ~/.claude-second/desktop-profile \
+    ~/.claude-second \
+    "Microsoft Edge" \
+    ~/my-icon.icns \
+    "My Second Claude Updater" \
+    ~/Claude-Session-Backups ~/.claude ~/.claude-second
+```
+
 Use the exact same arguments you used for `build-desktop-concurrent.sh`
 originally. Quit the running duplicate before using the updater — the
 rebuild will fail (or corrupt files) if the old copy still has files open.
