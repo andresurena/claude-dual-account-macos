@@ -197,7 +197,10 @@ service is covered in
 separate, related risk worth knowing about even without any of this:
 a single Cloudflare login can see multiple accounts at once, and
 `wrangler` will silently pick one unless you pin `account_id` per
-project.
+project. (One piece of good news in there: Claude Code's own plugin
+system *does* correctly respect `CLAUDE_CONFIG_DIR` already — see that
+doc if a plugin looks "not installed" and you want to rule out a
+wrong-context check before assuming it's actually broken.)
 
 ## Deep link pinning
 

@@ -189,6 +189,37 @@ to verify its account programmatically. Don't guess in that case — ask
 whoever owns the project, since a wrong `account_id` risks deploying to
 the wrong account entirely, not just failing loudly.
 
+## Claude Code's own plugin system actually does respect `CLAUDE_CONFIG_DIR` — check from the right place before assuming otherwise
+
+Unlike `gh` and `wrangler` above, Claude Code's plugin installer/registry
+*is* correctly isolated per `CLAUDE_CONFIG_DIR` out of the box — no
+workaround needed. Each profile gets its own independent
+`<config-dir>/plugins/installed_plugins.json`, `settings.json`
+(`enabledPlugins`), and cloned plugin files under
+`<config-dir>/plugins/cache/`. Installing a plugin while a second profile
+is active does the right thing automatically.
+
+The catch is diagnostic, not architectural: checking plugin status from
+the *wrong* context makes a correctly-isolated plugin look broken. A
+plugin installed under `~/.claude-work` (say, an org-specific integration
+that has no business being visible from the Personal profile) will
+correctly show as **not installed** if you check with `claude plugin
+list` from a plain shell that never exported `CLAUDE_CONFIG_DIR` — that's
+not a bug, it's the isolation working. Confirmed directly:
+
+```bash
+claude plugin list                                  # Personal — plugin not listed (correct: it's Work-only)
+CLAUDE_CONFIG_DIR=~/.claude-work claude plugin list  # Work — plugin listed, enabled ✔
+```
+
+If a plugin genuinely fails to register (files cloned, but truly absent
+from `installed_plugins.json` even when checked from the correct
+context), the fix is to look at *why* the install ran in the wrong
+context in the first place — not to hand-register it into the *other*
+profile's `settings.json`. Doing that would defeat the isolation this
+whole repo exists for: it would make a Work-specific tool silently
+appear inside the Personal profile.
+
 ## The general pattern
 
 Most of this lives in the `.envrc` for the project folder(s) where you want
