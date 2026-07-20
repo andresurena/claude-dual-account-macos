@@ -175,6 +175,41 @@ if [ -n "$ICON_PATH" ]; then
 fi
 
 codesign -v "$LAUNCHER_APP" && echo "OK: $LAUNCHER_APP is valid and ready to launch"
+
+echo "== Re-pinning claimed URL schemes back to the real $SOURCE_APP =="
+# Stripping CFBundleURLTypes from the duplicate (above) is not enough on
+# its own: `ditto` copies the scheme-claiming Info.plist verbatim before
+# the strip runs, and macOS's LaunchServices can pick up and cache that
+# claim in the brief window before it's removed — confirmed by hitting
+# this directly, where a rebuilt duplicate ended up as the live claude://
+# handler again despite its own Info.plist no longer declaring it. An
+# explicit re-pin closes that window for good, every rebuild.
+if ! command -v duti >/dev/null 2>&1; then
+  brew install duti
+fi
+SOURCE_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$SOURCE_APP/Contents/Info.plist")"
+# Parsed with plistlib rather than grep/awk over PlistBuddy's text output —
+# macOS's built-in /usr/bin/grep doesn't support the GNU flags that would
+# make that text-scraping reliable, and the structure (nested arrays of
+# dicts) is exactly the kind of thing worth parsing properly instead of
+# guessing at line-based patterns.
+SCHEMES="$(python3 -c "
+import plistlib
+with open('$SOURCE_APP/Contents/Info.plist', 'rb') as f:
+    d = plistlib.load(f)
+for entry in d.get('CFBundleURLTypes', []):
+    for scheme in entry.get('CFBundleURLSchemes', []):
+        print(scheme)
+")"
+if [ -n "$SCHEMES" ]; then
+  echo "$SCHEMES" | while IFS= read -r scheme; do
+    [ -z "$scheme" ] && continue
+    duti -s "$SOURCE_BUNDLE_ID" "$scheme" 2>&1 || true
+    echo "  $scheme -> $SOURCE_BUNDLE_ID"
+  done
+  killall cfprefsd 2>/dev/null || true
+fi
+
 echo
 echo "This instance can now run at the same time as your main Claude Desktop."
 echo "Re-run this whole script after every Claude Desktop update — the"

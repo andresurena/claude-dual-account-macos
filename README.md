@@ -298,11 +298,33 @@ works fine as a periodic job (cron/launchd) if you want it automatic.
   scheme, so two apps end up competing for the same deep link, and which
   one macOS actually picks isn't guaranteed. Found while chasing a report
   that `claude://` links from a browser weren't opening anything.
-  `build-desktop-concurrent.sh` now strips `CFBundleURLTypes` from every
+  `build-desktop-concurrent.sh` strips `CFBundleURLTypes` from every
   duplicate it builds — only `/Applications/Claude.app` itself can claim
-  the scheme. If you already have an older duplicate built before this
-  fix, re-run the script (or `scripts/pin-deep-link.sh` after manually
-  deleting `CFBundleURLTypes` from its `Info.plist`) to pick it up.
+  the scheme.
+  Stripping the Info.plist key alone turned out not to be enough, though:
+  `ditto` copies the scheme-claiming Info.plist verbatim *before* the
+  strip step runs, and macOS's LaunchServices can pick up and cache that
+  claim in the brief window before it's removed. Hit this exactly — a
+  freshly rebuilt duplicate (via the update-helper app from
+  `build-update-helper.sh`, days after the original fix) ended up as the
+  live `claude://` handler again despite its own Info.plist no longer
+  declaring it. The script now also
+  explicitly re-pins every scheme the *source* app claims back to the
+  source app's bundle ID, every rebuild, closing that window for good —
+  it doesn't just strip and hope.
+  If you already have an older duplicate built before this fix, re-run
+  the script to pick it up.
+- **Reading `com.apple.launchservices.secure.plist` directly doesn't
+  reliably reflect the live LaunchServices state right after a change.**
+  There can be a delay between a `duti -s` call (which talks to the live
+  LaunchServices database) and when that state is flushed to this
+  on-disk snapshot — `killall cfprefsd` doesn't force a flush, only a
+  fresh *read*. Trusting a too-early re-read of this file caused a real
+  scare while verifying the fix above (it briefly appeared to show the
+  wrong handler again, right after confirming the fix worked). The
+  reliable way to check whether a scheme pin actually took effect is a
+  behavioral test — `open claude://test` (or the relevant scheme) and
+  check which process actually launched — not a read of this file.
 
 ## Safety notes
 
