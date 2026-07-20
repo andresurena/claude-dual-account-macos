@@ -75,6 +75,61 @@ identity**, not just its own data.
   launches (Gatekeeper's stricter policy check mainly applies to
   quarantined/downloaded files, not locally-built ones) — just don't
   expect it to pass a full Gatekeeper assessment.
+- **Pinning the launcher app to the Dock shows two icons, not one — and
+  you should leave it that way.** The launcher (what you drag to the
+  Dock) and the actual running duplicate are two genuinely different
+  bundle identities (see [What `build-desktop-concurrent.sh` actually
+  does](#what-build-desktop-concurrentsh-actually-does) above — the
+  launcher just execs the duplicate and exits). macOS's Dock only merges
+  a pinned icon with a running process when they share the same bundle
+  ID, so you'll see the static pinned launcher icon *and* a separate
+  temporary icon for the running duplicate while it's open. This is
+  cosmetic, not a bug.
+  **Do not** right-click that second (running) icon and choose "Keep in
+  Dock" to try to clean this up — that pins the duplicate's raw binary
+  directly, bypassing the launcher's environment setup (`CLAUDE_CONFIG_DIR`,
+  browser routing) entirely. Launching it that way silently reintroduces
+  the isolation gap described in the main README's gotchas — the exact
+  failure this whole setup exists to prevent. Keep using the launcher's
+  icon; treat the extra temporary icon as noise.
+
+## LaunchServices can accumulate stale registrations — clean up after
+## deleting an old duplicate, don't just `rm -rf` it
+
+If you ever manually delete a duplicate built by this script (or an
+older experiment/app you're replacing), macOS's LaunchServices database
+can keep a registration pointing at the now-missing path indefinitely —
+`rm -rf` alone doesn't unregister it. These stale entries are dead
+weight at best, but at worst they can genuinely resurface: hit this
+directly, where ghost registrations from a deleted app (nested,
+non-obviously, inside a name that fuzzy-matched a current app) coincided
+with `claude://` deep links intermittently misbehaving again after they'd
+already been fixed once.
+
+Clean up properly instead of just deleting the folder:
+
+```bash
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+"$LSREGISTER" -u "/path/to/the/deleted/app.app"   # unregister the specific stale path
+"$LSREGISTER" -gc                                  # garbage-collect + compact the database
+```
+
+Check for ghosts with `"$LSREGISTER" -dump 2>/dev/null | grep -B5 "path:.*your-search-term"` —
+if a `path:` line points at something `ls` says doesn't exist, it's a
+ghost worth unregistering.
+
+**A sharper-edged finding from the same investigation**: `lsregister -f`
+(force-refresh a specific app's registration) is not risk-free to run
+speculatively. Re-registering the launcher and the duplicate right after
+a `duti -s ... claude` pin (to "make sure everything's fresh") flipped
+the deep-link handler back to the *wrong* app — the opposite of what was
+intended, undoing a pin that had just been verified working. The
+reliable sequence is: do any `lsregister` cleanup/refresh work *first*,
+then apply the explicit `duti -s <real-bundle-id> <scheme>` pin as the
+very last step, and verify behaviorally afterward (`open scheme://test`,
+check what launched) — not the other way around, and don't re-run
+`lsregister -f` "just to be safe" after the pin is already confirmed
+correct.
 
 ## Usage
 

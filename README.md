@@ -328,6 +328,23 @@ works fine as a periodic job (cron/launchd) if you want it automatic.
   reliable way to check whether a scheme pin actually took effect is a
   behavioral test — `open claude://test` (or the relevant scheme) and
   check which process actually launched — not a read of this file.
+- **Deleting an old duplicate with `rm -rf` leaves stale LaunchServices
+  registrations behind**, which can resurface later in confusing ways
+  (a ghost registration from a deleted app contributed to a `claude://`
+  mis-pin recurring days after it was fixed). Unregister properly with
+  `lsregister -u <path>` before deleting, or run `lsregister -gc`
+  afterward to garbage-collect stale entries. See
+  [`docs/desktop-concurrent-instances.md`](docs/desktop-concurrent-instances.md)
+  for the exact commands — including a sharper warning that
+  `lsregister -f` itself isn't safe to run speculatively after a pin is
+  already confirmed working; it can flip the pin back to the wrong app.
+- **Pinning the concurrent-instance launcher to the Dock shows two icons,
+  not one, and that's expected** — the launcher and the running duplicate
+  are different bundle identities, so the Dock can't merge them. Don't
+  "fix" this by pinning the running duplicate's icon directly instead;
+  that bypasses the launcher's environment setup and silently
+  reintroduces the isolation gap this repo exists to prevent. See
+  [`docs/desktop-concurrent-instances.md`](docs/desktop-concurrent-instances.md).
 
 ## Safety notes
 
