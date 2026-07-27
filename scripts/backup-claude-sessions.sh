@@ -18,6 +18,16 @@
 #
 # Safe to run repeatedly (e.g. from a periodic job) — each run creates a
 # new timestamped archive rather than overwriting the last one.
+#
+# Optional retention: set BACKUP_KEEP_LAST to an integer to automatically
+# delete older archives beyond that count, per label (so Personal and
+# Work archives are pruned independently, not competing for the same
+# quota). Unset (the default) keeps every archive forever.
+#
+#   BACKUP_KEEP_LAST=14 ./backup-claude-sessions.sh ~/Claude-Session-Backups ~/.claude ~/.claude-work
+#
+# See scripts/install-launchd-backup.sh to run this automatically on a
+# schedule instead of by hand.
 
 set -euo pipefail
 
@@ -44,6 +54,23 @@ for CONFIG_DIR in "$@"; do
   echo "== Backing up $PROJECTS_DIR -> $ARCHIVE =="
   tar -czf "$ARCHIVE" -C "$CONFIG_DIR" projects
   echo "  $(du -h "$ARCHIVE" | cut -f1)"
+
+  if [ -n "${BACKUP_KEEP_LAST:-}" ]; then
+    # Sort by filename, not mtime (`ls -t`) — the YYYYMMDD-HHMMSS
+    # timestamp in the name sorts correctly as a plain string and isn't
+    # vulnerable to multiple archives landing within the same mtime
+    # second (confirmed happening in testing: a handful of archives
+    # created moments apart all shared one second-resolution mtime,
+    # which would have made `ls -t`'s ordering unreliable/arbitrary).
+    OLD_ARCHIVES=$(ls -1 "$DEST_DIR/${LABEL}-sessions-"*.tar.gz 2>/dev/null | sort -r | tail -n +$((BACKUP_KEEP_LAST + 1)))
+    if [ -n "$OLD_ARCHIVES" ]; then
+      echo "  Pruning older ${LABEL} archives beyond the last ${BACKUP_KEEP_LAST}:"
+      echo "$OLD_ARCHIVES" | while IFS= read -r old; do
+        echo "    removing $(basename "$old")"
+        rm -f "$old"
+      done
+    fi
+  fi
 done
 
 echo

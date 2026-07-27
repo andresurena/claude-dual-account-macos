@@ -38,7 +38,8 @@ you use or which project folder you're in.
 | `scripts/build-update-helper.sh` | Builds a "double-click to refresh" app for the above — the duplicate doesn't auto-update, so this re-runs the rebuild with your saved parameters whenever Claude Desktop updates. Optionally backs up session transcripts (via `backup-claude-sessions.sh`) first, so an update is never the first moment you'd notice a backup was overdue |
 | `scripts/build-icns-from-image.sh` | Builds a proper multi-resolution `.icns` from a single source image, for custom app icons |
 | `scripts/pin-deep-link.sh` | Pins the `claude://` URL scheme to a specific app, once you have more than one Claude-branded `.app` installed |
-| `scripts/backup-claude-sessions.sh` | Backs up Claude Code session transcripts (`projects/`) from one or more profiles into timestamped archives — deliberately excludes credentials/tokens that live alongside them |
+| `scripts/backup-claude-sessions.sh` | Backs up Claude Code session transcripts (`projects/`) from one or more profiles into timestamped archives — deliberately excludes credentials/tokens that live alongside them. Supports optional automatic pruning via `BACKUP_KEEP_LAST` |
+| `scripts/install-launchd-backup.sh` | Installs a macOS `launchd` job that runs the backup above automatically on a daily schedule — no need to remember to run it by hand |
 | `docs/service-isolation.md` | Extending the same pattern to `gh`, `wrangler`, git commit identity, and plain API-key services |
 
 ## Quick start
@@ -230,8 +231,36 @@ directory — the config dir root also holds credentials and tokens (OAuth
 state, any service-isolation files per
 [`docs/service-isolation.md`](docs/service-isolation.md)) that have no
 reason to be duplicated into a backup location. Safe to run repeatedly —
-each run creates a new archive rather than overwriting the last, so it
-works fine as a periodic job (cron/launchd) if you want it automatic.
+each run creates a new archive rather than overwriting the last.
+
+Old archives accumulate forever by default. To prune automatically, set
+`BACKUP_KEEP_LAST` to how many archives to keep *per profile* (pruning is
+independent per label, so a busy Work profile doesn't crowd out Personal's
+retention or vice versa):
+
+```bash
+BACKUP_KEEP_LAST=14 ./scripts/backup-claude-sessions.sh ~/Claude-Session-Backups ~/.claude ~/.claude-work
+```
+
+### Running it automatically
+
+`install-launchd-backup.sh` sets up a real macOS `launchd` user agent so
+backups happen on a schedule without you remembering to run the command —
+it runs independently of whether Claude Code or any terminal is open:
+
+```bash
+./scripts/install-launchd-backup.sh ~/Claude-Session-Backups 9 0 14 ~/.claude ~/.claude-work
+```
+
+That example runs daily at 09:00 local time, keeping the last 14
+archives per profile (pass `0` to keep everything forever instead).
+Logs go to `~/Library/Logs/claude-session-backup.log`. Test it
+immediately instead of waiting for the scheduled time with
+`launchctl start com.<you>.claude-session-backup` (find the exact label
+in the script's own output after installing). Re-running the install
+script updates the schedule in place; to remove it entirely, the
+install script's own output includes the exact `launchctl unload` +
+`rm` commands for your setup.
 
 ## Known gotchas (already handled by these scripts, documented here so you understand *why*)
 
