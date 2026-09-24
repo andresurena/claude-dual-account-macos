@@ -81,6 +81,13 @@ CORE_BUNDLE_ID="com.$(whoami | tr -dc 'a-z0-9').${SLUG}-core"
 LAUNCHER_BUNDLE_ID="com.$(whoami | tr -dc 'a-z0-9').${SLUG}"
 BIN_DIR="$(dirname "$PROFILE_DIR")/bin"
 
+# The rebuild deletes and re-copies the core app, so refuse to start while
+# any of its processes (main app or Helpers) still have files open in it.
+if pgrep -f "${CORE_APP}/Contents/" >/dev/null 2>&1; then
+  echo "${APP_NAME} is still running — quit it (Cmd+Q) and run this again."
+  exit 1
+fi
+
 mkdir -p "$CORE_INSTALL_DIR" "$PROFILE_DIR"
 
 echo "== Duplicating Claude.app (copies 700MB+, may take a moment) =="
@@ -142,6 +149,25 @@ echo "== Signing duplicated core (ad-hoc, deep) =="
 codesign --force --deep -s - "$CORE_APP"
 codesign -v "$CORE_APP" && echo "core OK"
 
+if ! command -v duti >/dev/null 2>&1; then
+  brew install duti
+fi
+DUTI_BIN="$(command -v duti)"
+SOURCE_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$SOURCE_APP/Contents/Info.plist")"
+# Parsed with plistlib rather than grep/awk over PlistBuddy's text output —
+# macOS's built-in /usr/bin/grep doesn't support the GNU flags that would
+# make that text-scraping reliable, and the structure (nested arrays of
+# dicts) is exactly the kind of thing worth parsing properly instead of
+# guessing at line-based patterns.
+SCHEMES="$(python3 -c "
+import plistlib
+with open('$SOURCE_APP/Contents/Info.plist', 'rb') as f:
+    d = plistlib.load(f)
+for entry in d.get('CFBundleURLTypes', []):
+    for scheme in entry.get('CFBundleURLSchemes', []):
+        print(scheme)
+")"
+
 echo "== Building launcher app =="
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -157,6 +183,20 @@ SHIM
   SHELL_CMD="${SHELL_CMD}export PATH=\"${BIN_DIR}:\$PATH\"; "
 fi
 SHELL_CMD="${SHELL_CMD}nohup \"${CORE_APP}/Contents/MacOS/${MAIN_EXECUTABLE}\" --user-data-dir=\"${PROFILE_DIR}\" > /dev/null 2>&1 &"
+# Claude Desktop 2.x registers itself as the claude:// handler at runtime
+# on every launch (Electron's setAsDefaultProtocolClient), regardless of
+# what its Info.plist declares — confirmed by pinning claude:// back to
+# the real Claude.app, relaunching the duplicate, and watching it take
+# the scheme straight back. The rebuild-time re-pin below can't cover
+# that, so the launcher re-pins shortly after every start as well.
+if [ -n "$SCHEMES" ]; then
+  REPIN_CMD="sleep 20"
+  while IFS= read -r scheme; do
+    [ -z "$scheme" ] && continue
+    REPIN_CMD="${REPIN_CMD}; \"${DUTI_BIN}\" -s ${SOURCE_BUNDLE_ID} ${scheme}"
+  done <<< "$SCHEMES"
+  SHELL_CMD="${SHELL_CMD} (${REPIN_CMD}) > /dev/null 2>&1 &"
+fi
 AS_ESCAPED="${SHELL_CMD//\"/\\\"}"
 
 cat > "$WORKDIR/launcher.applescript" <<EOF
@@ -183,24 +223,8 @@ echo "== Re-pinning claimed URL schemes back to the real $SOURCE_APP =="
 # claim in the brief window before it's removed — confirmed by hitting
 # this directly, where a rebuilt duplicate ended up as the live claude://
 # handler again despite its own Info.plist no longer declaring it. An
-# explicit re-pin closes that window for good, every rebuild.
-if ! command -v duti >/dev/null 2>&1; then
-  brew install duti
-fi
-SOURCE_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$SOURCE_APP/Contents/Info.plist")"
-# Parsed with plistlib rather than grep/awk over PlistBuddy's text output —
-# macOS's built-in /usr/bin/grep doesn't support the GNU flags that would
-# make that text-scraping reliable, and the structure (nested arrays of
-# dicts) is exactly the kind of thing worth parsing properly instead of
-# guessing at line-based patterns.
-SCHEMES="$(python3 -c "
-import plistlib
-with open('$SOURCE_APP/Contents/Info.plist', 'rb') as f:
-    d = plistlib.load(f)
-for entry in d.get('CFBundleURLTypes', []):
-    for scheme in entry.get('CFBundleURLSchemes', []):
-        print(scheme)
-")"
+# explicit re-pin closes that window for good, every rebuild. (The
+# launcher also re-pins after every launch — see above.)
 if [ -n "$SCHEMES" ]; then
   echo "$SCHEMES" | while IFS= read -r scheme; do
     [ -z "$scheme" ] && continue

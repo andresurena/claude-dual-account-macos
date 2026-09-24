@@ -35,10 +35,12 @@ you use or which project folder you're in.
 | `scripts/build-cli-launcher.sh` | Builds a double-clickable app that opens Terminal into a project folder and launches your wrapper command |
 | `scripts/build-desktop-launcher.sh` | Builds a double-clickable app that launches Claude Desktop with an isolated profile (simple, fully supported — see caveats below) |
 | `scripts/build-desktop-concurrent.sh` | **Advanced/unsupported**: duplicates Claude Desktop so two instances can run *at the same time*. Real trade-offs — read [`docs/desktop-concurrent-instances.md`](docs/desktop-concurrent-instances.md) first |
-| `scripts/build-update-helper.sh` | Builds a "double-click to refresh" app for the above — the duplicate doesn't auto-update, so this re-runs the rebuild with your saved parameters whenever Claude Desktop updates. Optionally backs up session transcripts (via `backup-claude-sessions.sh`) first, so an update is never the first moment you'd notice a backup was overdue |
+| `scripts/build-update-helper.sh` | Builds a "double-click to refresh" app for the above — the duplicate doesn't auto-update, so this re-runs the rebuild with your saved parameters whenever Claude Desktop updates. Rebuilds first, then optionally backs up session transcripts (via `backup-claude-sessions.sh`), so an update is never the first moment you'd notice a backup was overdue |
+| `scripts/check-desktop-drift.sh` | Compares the duplicate's version against `/Applications/Claude.app` and posts a macOS notification if the duplicate has fallen behind |
+| `scripts/install-launchd-drift-check.sh` | Installs a `launchd` job that runs the drift check above daily and at every login |
 | `scripts/build-icns-from-image.sh` | Builds a proper multi-resolution `.icns` from a single source image, for custom app icons |
 | `scripts/pin-deep-link.sh` | Pins the `claude://` URL scheme to a specific app, once you have more than one Claude-branded `.app` installed |
-| `scripts/backup-claude-sessions.sh` | Backs up Claude Code session transcripts (`projects/`) from one or more profiles into timestamped archives — deliberately excludes credentials/tokens that live alongside them. Supports optional automatic pruning via `BACKUP_KEEP_LAST` |
+| `scripts/backup-claude-sessions.sh` | Backs up Claude Code session transcripts (`projects/`) from one or more profiles into timestamped, read-back-verified archives — deliberately excludes credentials/tokens that live alongside them. Supports optional automatic pruning via `BACKUP_KEEP_LAST` |
 | `scripts/install-launchd-backup.sh` | Installs a macOS `launchd` job that runs the backup above automatically on a daily schedule — no need to remember to run it by hand |
 | `docs/service-isolation.md` | Extending the same pattern to `gh`, `wrangler`, git commit identity, and plain API-key services |
 
@@ -233,6 +235,13 @@ state, any service-isolation files per
 reason to be duplicated into a backup location. Safe to run repeatedly —
 each run creates a new archive rather than overwriting the last.
 
+Each archive is written as `<name>.tar.gz.partial`, read back in full,
+and only renamed to `.tar.gz` once it verifies. An interrupted run (a
+closed Terminal window, a sleep, a kill) deletes its partial file instead
+of leaving a truncated archive under a normal-looking name — which
+matters, because truncated archives would otherwise count toward
+`BACKUP_KEEP_LAST` and could push real backups out.
+
 Old archives accumulate forever by default. To prune automatically, set
 `BACKUP_KEEP_LAST` to how many archives to keep *per profile* (pruning is
 independent per label, so a busy Work profile doesn't crowd out Personal's
@@ -261,6 +270,24 @@ in the script's own output after installing). Re-running the install
 script updates the schedule in place; to remove it entirely, the
 install script's own output includes the exact `launchctl unload` +
 `rm` commands for your setup.
+
+## Knowing when the duplicate is out of date
+
+A duplicate built by `build-desktop-concurrent.sh` never auto-updates,
+and nothing else tells you it's stale — the first sign is usually a
+missing feature or model. `install-launchd-drift-check.sh` installs a
+`launchd` job that compares its version against `/Applications/Claude.app`
+daily and at every login, and posts a notification when they differ:
+
+```bash
+./scripts/install-launchd-drift-check.sh "$HOME/.claude-work/core/Claude Work Desktop.app" 9 5 "Claude Work Updater"
+```
+
+The last argument is optional — it's just the updater app name the
+notification tells you to run. Logs go to
+`~/Library/Logs/claude-desktop-drift-check.log`. The updater app itself
+(`build-update-helper.sh`) refuses to rebuild while the duplicate is
+still running, so quit it first.
 
 ## Known gotchas (already handled by these scripts, documented here so you understand *why*)
 
@@ -346,6 +373,14 @@ install script's own output includes the exact `launchctl unload` +
   it doesn't just strip and hope.
   If you already have an older duplicate built before this fix, re-run
   the script to pick it up.
+  **Claude Desktop 2.x goes further and re-claims `claude://` at runtime,
+  on every launch** (Electron's `setAsDefaultProtocolClient`), regardless
+  of what its Info.plist declares — confirmed by pinning the scheme back
+  to the real Claude.app, relaunching the duplicate, and watching it take
+  the scheme straight back. No build-time step can prevent that, so the
+  launcher `build-desktop-concurrent.sh` generates now also re-pins every
+  source-app scheme ~20 seconds after each start. For those first ~20
+  seconds, a `claude://` link can still land in the duplicate.
 - **Reading `com.apple.launchservices.secure.plist` directly doesn't
   reliably reflect the live LaunchServices state right after a change.**
   There can be a delay between a `duti -s` call (which talks to the live

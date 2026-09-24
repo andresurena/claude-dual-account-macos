@@ -41,6 +41,17 @@ fi
 mkdir -p "$DEST_DIR"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
+# Each archive is written under a .partial name, read back in full, and
+# only then renamed to its real .tar.gz name. An interrupted run (e.g.
+# the Terminal window closed mid-backup) used to leave a truncated
+# archive under the normal name — indistinguishable from a good one at a
+# glance, and counted toward BACKUP_KEEP_LAST, so a few failed runs could
+# prune real backups in favour of broken ones. Hit directly: two
+# interrupted runs left 104MB and 683MB archives that wouldn't extract.
+PARTIAL=""
+trap 'rm -f "${PARTIAL:-}"' EXIT
+trap 'exit 130' INT TERM HUP
+
 for CONFIG_DIR in "$@"; do
   CONFIG_DIR="${CONFIG_DIR%/}"
   PROJECTS_DIR="$CONFIG_DIR/projects"
@@ -52,8 +63,15 @@ for CONFIG_DIR in "$@"; do
   [ -z "$LABEL" ] && LABEL="claude"
   ARCHIVE="$DEST_DIR/${LABEL}-sessions-${TIMESTAMP}.tar.gz"
   echo "== Backing up $PROJECTS_DIR -> $ARCHIVE =="
-  tar -czf "$ARCHIVE" -C "$CONFIG_DIR" projects
-  echo "  $(du -h "$ARCHIVE" | cut -f1)"
+  PARTIAL="${ARCHIVE}.partial"
+  tar -czf "$PARTIAL" -C "$CONFIG_DIR" projects
+  if ! tar -tzf "$PARTIAL" >/dev/null; then
+    echo "  ERROR: $PARTIAL doesn't read back cleanly — discarded"
+    exit 1
+  fi
+  mv "$PARTIAL" "$ARCHIVE"
+  PARTIAL=""
+  echo "  $(du -h "$ARCHIVE" | cut -f1) (verified)"
 
   if [ -n "${BACKUP_KEEP_LAST:-}" ]; then
     # Sort by filename, not mtime (`ls -t`) — the YYYYMMDD-HHMMSS

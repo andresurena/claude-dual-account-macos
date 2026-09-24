@@ -166,8 +166,9 @@ when it's done:
 
 By default the generated app is named "Update My Second Claude" — pass a
 seventh argument to override that. You can also have it back up session
-transcripts (via `backup-claude-sessions.sh`) immediately before every
-rebuild, by adding a backup destination and one or more config
+transcripts (via `backup-claude-sessions.sh`) right after every rebuild
+(after, not before — so closing the window during a long backup can't
+cost you the rebuild), by adding a backup destination and one or more config
 directories after that:
 
 ```
@@ -183,7 +184,11 @@ directories after that:
 
 Use the exact same arguments you used for `build-desktop-concurrent.sh`
 originally. Quit the running duplicate before using the updater — the
-rebuild will fail (or corrupt files) if the old copy still has files open.
+rebuild refuses to start while the old copy still has files open.
+
+To get a notification when the duplicate has fallen behind Claude
+Desktop (rather than finding out from a missing feature), see
+`install-launchd-drift-check.sh` in the README.
 
 ## If you just want isolated data, not true concurrency
 

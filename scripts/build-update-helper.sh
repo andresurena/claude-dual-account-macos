@@ -4,9 +4,9 @@
 # build-desktop-concurrent.sh with the same parameters you originally
 # used — for whenever Claude Desktop updates and your concurrent
 # duplicate (see docs/desktop-concurrent-instances.md) needs refreshing
-# to match. Optionally backs up Claude Code session transcripts first,
-# via backup-claude-sessions.sh, so an update is never the first time
-# you'd notice a backup was overdue.
+# to match. Optionally backs up Claude Code session transcripts
+# afterwards, via backup-claude-sessions.sh, so an update is never the
+# first time you'd notice a backup was overdue.
 #
 # Usage:
 #   ./build-update-helper.sh "App Name" /path/to/core-install-dir /path/to/profile-data-dir /path/to/claude-config-dir \
@@ -30,8 +30,8 @@
 # duplication (and the backup, if configured) with the same parameters,
 # and tells you when it's done.
 #
-# Quit the running duplicate before using it — the rebuild will fail (or
-# corrupt files) if the old copy still has files open.
+# Quit the running duplicate before using it — the rebuild refuses to
+# start (and says so) while the old copy still has files open.
 
 set -euo pipefail
 
@@ -80,15 +80,22 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # it in one pass at the end — see build-desktop-launcher.sh for why doing
 # this in two separate steps matters (mixing escaping contexts is a real,
 # previously-hit bug).
-SHELL_CMD=""
+#
+# The rebuild runs BEFORE the backup, not after: the backup of a large
+# profile can take minutes, and closing the window during it used to kill
+# the rebuild queued behind it too — leaving the duplicate un-updated with
+# no obvious sign why. Rebuild-first means the part you ran this for is
+# done in the first minute or so.
+SHELL_CMD="echo 'Keep this window open until it says Done.'; echo; "
+SHELL_CMD="${SHELL_CMD}\"${CONCURRENT_SCRIPT}\" \"${APP_NAME}\" \"${CORE_INSTALL_DIR}\" \"${PROFILE_DIR}\" \"${CLAUDE_CONFIG_DIR_VALUE}\" \"${BROWSER_APP}\" \"${ICON_PATH}\"; echo; "
 if [ -n "$BACKUP_DEST_DIR" ]; then
-  SHELL_CMD="\"${BACKUP_SCRIPT}\" \"${BACKUP_DEST_DIR}\""
+  SHELL_CMD="${SHELL_CMD}\"${BACKUP_SCRIPT}\" \"${BACKUP_DEST_DIR}\""
   for d in "${BACKUP_ARGS[@]}"; do
     SHELL_CMD="${SHELL_CMD} \"${d}\""
   done
   SHELL_CMD="${SHELL_CMD}; echo; "
 fi
-SHELL_CMD="${SHELL_CMD}\"${CONCURRENT_SCRIPT}\" \"${APP_NAME}\" \"${CORE_INSTALL_DIR}\" \"${PROFILE_DIR}\" \"${CLAUDE_CONFIG_DIR_VALUE}\" \"${BROWSER_APP}\" \"${ICON_PATH}\"; echo; echo 'Done — you can close this window.'"
+SHELL_CMD="${SHELL_CMD}echo 'Done — you can close this window.'"
 AS_ESCAPED="${SHELL_CMD//\"/\\\"}"
 
 cat > "$WORKDIR/updater.applescript" <<EOF
